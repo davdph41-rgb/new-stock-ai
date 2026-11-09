@@ -213,7 +213,7 @@ async function saveStock() {
   try {
     showStatus("Menyimpan stok ke database...");
 
-    const response = await fetch("/api/stock-save", {
+    const response = await fetch("/api/stock-history", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
