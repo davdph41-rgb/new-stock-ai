@@ -199,11 +199,11 @@ async function saveStock() {
     }
 
     showStatus(
-      `Berhasil! Stok awal tanggal ${date} telah disimpan.`
-    );
+  `Berhasil! Stok awal tanggal ${date} telah disimpan.`
+);
 
-    await loadStock();
-
+await loadStock();
+await loadStockHistory();
   } catch (error) {
     showStatus(error.message, true);
 
