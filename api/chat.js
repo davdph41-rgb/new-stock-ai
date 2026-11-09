@@ -10,6 +10,14 @@ function getJakartaDate() {
 }
 
 function getBaseUrl(req) {
+  if (req.headers.origin) {
+    return req.headers.origin;
+  }
+
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  }
+
   if (process.env.VERCEL_URL) {
     return `https://${process.env.VERCEL_URL}`;
   }
@@ -23,7 +31,6 @@ function getBaseUrl(req) {
 
   return `${protocol}://${host}`;
 }
-
 async function readJsonResponse(response, label) {
   const raw = await response.text();
 
