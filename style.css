@@ -1,0 +1,451 @@
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #212121;
+  --sidebar: #171717;
+  --surface: #303030;
+  --border: #3c3c3c;
+  --text: #ececec;
+  --muted: #999;
+  --accent: #10a37f;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: Arial, sans-serif;
+}
+
+.app {
+  display: flex;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* SIDEBAR */
+
+.sidebar {
+  width: 260px;
+  min-width: 260px;
+  background: var(--sidebar);
+  padding: 18px 12px;
+  display: flex;
+  flex-direction: column;
+  transition: .25s;
+}
+
+.side-header,
+.brand,
+.profile {
+  display: flex;
+  align-items: center;
+}
+
+.side-header {
+  justify-content: space-between;
+  margin-bottom: 25px;
+}
+
+.brand {
+  gap: 10px;
+  font-size: 19px;
+  font-weight: bold;
+}
+
+.brand-icon,
+.avatar,
+.welcome-icon {
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  border-radius: 10px;
+  font-weight: bold;
+}
+
+.brand-icon {
+  width: 34px;
+  height: 34px;
+}
+
+.new-chat {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 13px;
+  border-radius: 9px;
+  text-align: left;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.new-chat span {
+  margin-right: 8px;
+}
+
+.side-label {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  margin: 26px 8px 10px;
+}
+
+.nav-item {
+  padding: 12px;
+  border: 0;
+  color: #ccc;
+  background: transparent;
+  border-radius: 8px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.nav-item span {
+  margin-right: 10px;
+}
+
+.nav-item.active,
+.nav-item:hover,
+.new-chat:hover {
+  background: #303030;
+}
+
+.history {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.history-item {
+  color: #bbb;
+  font-size: 13px;
+  padding: 11px;
+  cursor: pointer;
+  border-radius: 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item:hover {
+  background: #303030;
+}
+
+.profile {
+  gap: 10px;
+  padding: 15px 5px 5px;
+  border-top: 1px solid var(--border);
+}
+
+.avatar {
+  width: 36px;
+  height: 36px;
+}
+
+.profile strong,
+.profile small {
+  display: block;
+  font-size: 12px;
+}
+
+.profile small {
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+/* MAIN */
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 25px;
+  border-bottom: 1px solid var(--border);
+}
+
+.status {
+  font-size: 12px;
+  color: #aaa;
+}
+
+.status-dot {
+  display: inline-block;
+  background: #10a37f;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 5px;
+}
+
+.icon-btn {
+  background: transparent;
+  color: white;
+  border: none;
+  font-size: 19px;
+  cursor: pointer;
+}
+
+.menu-btn,
+.close-menu,
+.mobile-brand {
+  display: none;
+}
+
+/* CHAT */
+
+.chat-area {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.welcome {
+  width: min(600px, 90%);
+  margin: auto;
+  text-align: center;
+  padding: 30px 0;
+}
+
+.welcome-icon {
+  width: 65px;
+  height: 65px;
+  margin: auto;
+  font-size: 30px;
+  border-radius: 18px;
+}
+
+.welcome h1 {
+  margin-top: 22px;
+  font-size: 30px;
+}
+
+.welcome p {
+  color: var(--muted);
+  font-size: 14px;
+  margin-top: 10px;
+  line-height: 1.6;
+}
+
+.suggestions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 35px;
+}
+
+.suggestions button {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 16px;
+  text-align: left;
+  display: flex;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.suggestions button:hover {
+  background: #3b3b3b;
+}
+
+.suggestions button > span {
+  font-size: 20px;
+}
+
+.suggestions strong,
+.suggestions small {
+  display: block;
+}
+
+.suggestions strong {
+  font-size: 12px;
+}
+
+.suggestions small {
+  color: var(--muted);
+  margin-top: 6px;
+  font-size: 11px;
+}
+
+/* MESSAGES */
+
+.messages {
+  display: none;
+  width: min(760px, 90%);
+  margin: 0 auto;
+  padding: 30px 0;
+}
+
+.message {
+  display: flex;
+  margin-bottom: 25px;
+  gap: 12px;
+}
+
+.message.user {
+  justify-content: flex-end;
+}
+
+.message-content {
+  max-width: 85%;
+  padding: 14px 17px;
+  border-radius: 15px;
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.user .message-content {
+  background: #303030;
+}
+
+.ai .message-content {
+  background: transparent;
+}
+
+.ai-avatar {
+  background: var(--accent);
+  min-width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  font-size: 12px;
+}
+
+/* INPUT */
+
+.input-container {
+  width: min(760px, 92%);
+  margin: 0 auto;
+  padding: 15px 0 12px;
+}
+
+.input-box {
+  display: flex;
+  align-items: flex-end;
+  background: var(--surface);
+  border: 1px solid #505050;
+  border-radius: 18px;
+  padding: 9px;
+  gap: 10px;
+}
+
+.input-box textarea {
+  flex: 1;
+  resize: none;
+  max-height: 130px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: white;
+  font-size: 14px;
+  padding: 9px 0;
+  font-family: inherit;
+}
+
+.input-box textarea::placeholder {
+  color: #888;
+}
+
+.attach-btn,
+.send-btn {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 20px;
+}
+
+.attach-btn {
+  background: transparent;
+  color: white;
+}
+
+.send-btn {
+  background: var(--text);
+  color: #222;
+  font-weight: bold;
+}
+
+.disclaimer {
+  text-align: center;
+  color: #777;
+  font-size: 10px;
+  margin-top: 12px;
+}
+
+.preview img {
+  width: 100px;
+  height: 100px;
+  object-fit: cover;
+  border-radius: 10px;
+  margin-bottom: 10px;
+}
+
+.preview button {
+  display: block;
+  background: #444;
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  border-radius: 5px;
+  margin-bottom: 10px;
+}
+
+/* MOBILE */
+
+@media(max-width: 700px) {
+  .sidebar {
+    position: fixed;
+    z-index: 10;
+    left: -270px;
+    top: 0;
+    bottom: 0;
+  }
+
+  .sidebar.open {
+    left: 0;
+  }
+
+  .menu-btn,
+  .mobile-brand {
+    display: block;
+  }
+
+  .close-menu {
+    display: block;
+  }
+
+  .topbar {
+    padding: 0 16px;
+  }
+
+  .suggestions {
+    grid-template-columns: 1fr;
+  }
+
+  .welcome h1 {
+    font-size: 25px;
+  }
+
+  .messages {
+    width: 94%;
+  }
+}
