@@ -71,22 +71,6 @@ body {
   width: 34px;
   height: 34px;
 }
-/* Mengatur kontainer ikon agar fleksibel */
-.brand-icon {
-    width: 40px;          /* Sesuaikan dengan lebar sidebar Anda */
-    height: 40px;         /* Sesuaikan dengan tinggi yang diinginkan */
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;     /* Mencegah gambar keluar dari batas */
-}
-
-/* Mengatur gambar logo agar responsif dan pas */
-.sidebar-logo {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;  /* Memastikan gambar proporsional tanpa terpotong */
-}
 
 .new-chat {
   background: transparent;
