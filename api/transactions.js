@@ -15,6 +15,9 @@ export default async function handler(req, res) {
     // GET: MEMBACA TRANSAKSI
     if (req.method === "GET") {
       const { date } = req.query;
+      if (date && (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date))) {
+        return res.status(400).json({ success: false, error: "Format tanggal harus YYYY-MM-DD" });
+      }
 
       let transactions;
 
@@ -89,155 +92,186 @@ export default async function handler(req, res) {
       });
     }
 
-    // POST: MENYIMPAN TRANSAKSI
+    // POST: MENYIMPAN TRANSAKSI SECARA UTUH
     if (req.method === "POST") {
       const {
         transactionType,
         date,
         sessionNumber,
         description,
-        items
+        items,
+        requestKey
       } = req.body || {};
 
-      const allowedTypes = [
-        "reservation",
-        "manual_sales",
-        "session_sales"
-      ];
-
+      const allowedTypes = ["reservation", "manual_sales", "session_sales"];
       if (
         !allowedTypes.includes(transactionType) ||
-        !date ||
+        typeof date !== "string" ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
         !Array.isArray(items) ||
         items.length === 0
       ) {
-        return res.status(400).json({
-          success: false,
-          error: "Data transaksi tidak lengkap atau tidak valid"
-        });
+        return res.status(400).json({ success: false, error: "Data transaksi tidak lengkap atau tidak valid" });
       }
 
       if (
         items.some(item =>
-          !Number.isInteger(Number(item.productId)) ||
-          !Number.isInteger(Number(item.quantity)) ||
+          !Number.isSafeInteger(Number(item.productId)) ||
+          !Number.isSafeInteger(Number(item.quantity)) ||
           Number(item.productId) <= 0 ||
           Number(item.quantity) <= 0
         ) ||
         new Set(items.map(item => Number(item.productId))).size !== items.length
       ) {
-        return res.status(400).json({
-          success: false,
-          error: "Produk atau jumlah tidak valid"
-        });
+        return res.status(400).json({ success: false, error: "Produk atau jumlah tidak valid" });
       }
 
-      if (
-        transactionType === "session_sales" &&
-        ![1, 2, 3].includes(Number(sessionNumber))
-      ) {
-        return res.status(400).json({
-          success: false,
-          error: "Nomor sesi tidak valid"
-        });
+      if (transactionType === "session_sales" && ![1, 2, 3].includes(Number(sessionNumber))) {
+        return res.status(400).json({ success: false, error: "Nomor sesi tidak valid" });
+      }
+      if (transactionType === "session_sales") {
+        const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+        if (weekday !== 0 && weekday !== 6 && Number(sessionNumber) === 3) {
+          return res.status(400).json({ success: false, error: "Hari kerja hanya memiliki sesi 1 dan sesi 2." });
+        }
       }
 
       const stockDays = await sql`
-        SELECT id
-        FROM stock_days
-        WHERE stock_date = ${date}
-        LIMIT 1
+        SELECT id FROM stock_days WHERE stock_date = ${date}::date LIMIT 1
       `;
-
       if (stockDays.length === 0) {
-        return res.status(404).json({
-          success: false,
-          error: "Stok awal tanggal tersebut belum tersedia"
-        });
+        return res.status(404).json({ success: false, error: "Stok awal tanggal tersebut belum tersedia" });
       }
-
       const stockDayId = stockDays[0].id;
 
       if (transactionType === "session_sales") {
         const sessions = await sql`
-          SELECT status
-          FROM stock_sessions
+          SELECT status FROM stock_sessions
           WHERE stock_day_id = ${stockDayId}
             AND session_number = ${Number(sessionNumber)}
         `;
-
-        if (sessions.length > 0 && sessions[0].status === "closed") {
-          return res.status(409).json({
-            success: false,
-            error: "Sesi sudah ditutup"
-          });
+        if (sessions.length && sessions[0].status === "closed") {
+          return res.status(409).json({ success: false, error: "Sesi sudah ditutup dan dikunci" });
         }
       }
 
       const productIds = items.map(item => Number(item.productId));
-
       const products = await sql`
-        SELECT id
-        FROM products
-        WHERE id = ANY(${productIds}::bigint[])
-          AND active = true
+        SELECT id FROM products
+        WHERE id = ANY(${productIds}::bigint[]) AND active = true
+      `;
+      if (products.length !== productIds.length) {
+        return res.status(400).json({ success: false, error: "Ada produk yang tidak ditemukan atau tidak aktif" });
+      }
+
+      // Kunci duplikat sederhana: key dari isi foto/pesan disimpan di kolom description.
+      // Tidak membutuhkan perubahan tabel/database.
+      const safeRequestKey = typeof requestKey === "string" && /^[a-f0-9]{64}$/.test(requestKey)
+        ? requestKey
+        : null;
+      const marker = safeRequestKey ? `[STOCKAI:${safeRequestKey}]` : null;
+
+      if (marker) {
+        const duplicate = await sql`
+          SELECT id, transaction_number
+          FROM stock_transactions
+          WHERE description LIKE ${`%${marker}%`}
+          LIMIT 1
+        `;
+        if (duplicate.length) {
+          return res.status(200).json({
+            success: true,
+            duplicate: true,
+            message: "Pesan atau foto ini sudah pernah dicatat. Tidak ada pengurangan ulang.",
+            transaction: {
+              id: duplicate[0].id,
+              transactionNumber: duplicate[0].transaction_number
+            }
+          });
+        }
+      }
+
+      // Pastikan stok masih cukup sebelum menyimpan transaksi.
+      const balances = await sql`
+        SELECT
+          d.product_id,
+          p.name AS product_name,
+          d.opening_quantity,
+          COALESCE(SUM(i.quantity), 0)::integer AS deducted
+        FROM stock_day_items d
+        JOIN products p ON p.id = d.product_id
+        LEFT JOIN stock_transactions t ON t.stock_day_id = d.stock_day_id
+        LEFT JOIN stock_transaction_items i
+          ON i.transaction_id = t.id AND i.product_id = d.product_id
+        WHERE d.stock_day_id = ${stockDayId}
+        GROUP BY d.product_id, p.name, d.opening_quantity
       `;
 
-      if (products.length !== productIds.length) {
-        return res.status(400).json({
+      const shortages = [];
+      for (const item of items) {
+        const row = balances.find(balance => Number(balance.product_id) === Number(item.productId));
+        const available = row ? Number(row.opening_quantity) - Number(row.deducted) : 0;
+        if (!row || available < Number(item.quantity)) {
+          shortages.push({
+            productName: row?.product_name || `Produk #${item.productId}`,
+            available,
+            requested: Number(item.quantity)
+          });
+        }
+      }
+      if (shortages.length) {
+        return res.status(409).json({
           success: false,
-          error: "Ada produk yang tidak ditemukan atau tidak aktif"
+          error: "Stok tidak mencukupi. Transaksi tidak disimpan.",
+          shortages
         });
       }
 
-      const result = await sql`
-        INSERT INTO stock_transactions (
-          transaction_type,
-          stock_day_id,
-          session_number,
-          description,
-          transaction_date
-        )
-        VALUES (
-          ${transactionType},
-          ${stockDayId},
-          ${
-            transactionType === "session_sales"
-              ? Number(sessionNumber)
-              : null
-          },
-          ${description || null},
-          ${date}
-        )
-        RETURNING id, transaction_number
-      `;
+      const descriptionWithKey = marker
+        ? `${marker} ${String(description || "").slice(0, 900)}`
+        : (description || null);
 
-      const transactionId = result[0].id;
-
-      for (const item of items) {
-        await sql`
-          INSERT INTO stock_transaction_items (
-            transaction_id,
-            product_id,
-            quantity
+      // Satu SQL statement agar transaksi dan seluruh item tersimpan bersama.
+      const inserted = await sql`
+        WITH input_items AS (
+          SELECT * FROM jsonb_to_recordset(${JSON.stringify(items.map(item => ({
+            product_id: Number(item.productId),
+            quantity: Number(item.quantity)
+          })))}::jsonb) AS x(product_id bigint, quantity integer)
+        ),
+        new_transaction AS (
+          INSERT INTO stock_transactions (
+            transaction_type, stock_day_id, session_number,
+            description, transaction_date
           )
           VALUES (
-            ${transactionId},
-            ${Number(item.productId)},
-            ${Number(item.quantity)}
+            ${transactionType},
+            ${stockDayId},
+            ${transactionType === "session_sales" ? Number(sessionNumber) : null},
+            ${descriptionWithKey},
+            ${date}::date
           )
-        `;
-      }
+          RETURNING id, transaction_number
+        ),
+        new_items AS (
+          INSERT INTO stock_transaction_items (transaction_id, product_id, quantity)
+          SELECT nt.id, ii.product_id, ii.quantity
+          FROM new_transaction nt CROSS JOIN input_items ii
+          RETURNING id
+        )
+        SELECT nt.id, nt.transaction_number, (SELECT COUNT(*) FROM new_items)::integer AS item_count
+        FROM new_transaction nt
+      `;
 
       return res.status(201).json({
         success: true,
         message: "Transaksi berhasil disimpan",
         transaction: {
-          id: transactionId,
-          transactionNumber: result[0].transaction_number,
+          id: inserted[0].id,
+          transactionNumber: inserted[0].transaction_number,
           transactionType,
           date,
-          sessionNumber: sessionNumber || null,
+          sessionNumber: transactionType === "session_sales" ? Number(sessionNumber) : null,
           items
         }
       });
