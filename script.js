@@ -24,32 +24,185 @@ function newChat() {
 }
 
 function toggleSidebar() {
-  document.getElementById("sidebar").classList.toggle("open");
+  const sidebar = document.getElementById("sidebar");
+  if (!sidebar) return;
+  sidebar.classList.toggle("open");
+}
+
+function closeSidebar() {
+  const sidebar = document.getElementById("sidebar");
+  if (sidebar) sidebar.classList.remove("open");
+}
+
+function setActiveMenu(button) {
+  document.querySelectorAll(".nav-item").forEach(item => {
+    item.classList.remove("active");
+  });
+
+  if (button) button.classList.add("active");
+}
+
+function getLocalDateString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function showConversation(button) {
+  setActiveMenu(button);
+  closeSidebar();
+
+  const welcome = document.getElementById("welcome");
+  const messages = document.getElementById("messages");
+
+  if (currentChat && currentChat.messages.length) {
+    messages.style.display = "block";
+    welcome.style.display = "none";
+  } else {
+    messages.style.display = "none";
+    welcome.style.display = "block";
+  }
+}
+
+function quickMessage(text) {
+  const input = document.getElementById("messageInput");
+  if (!input) return;
+
+  input.value = text;
+  input.focus();
+  sendMessage();
+}
+
+async function showTransactionHistory(button) {
+  setActiveMenu(button);
+  closeSidebar();
+
+  if (!currentChat) {
+    currentChat = createChat();
+    chats.unshift(currentChat);
+  }
+
+  addMessage("Memuat riwayat transaksi hari ini...", "ai");
+
+  try {
+    const date = getLocalDateString();
+    const response = await fetch(`/api/transactions?date=${encodeURIComponent(date)}`);
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || "Gagal memuat riwayat transaksi.");
+    }
+
+    if (!result.transactions || result.transactions.length === 0) {
+      addMessage(`Belum ada transaksi pada tanggal ${date}.`, "ai");
+      return;
+    }
+
+    let report = `## Riwayat Transaksi — ${date}\n\n`;
+    result.transactions.forEach((transaction, index) => {
+      const typeLabels = {
+        reservation: "Reservasi",
+        manual_sales: "Penjualan Manual",
+        session_sales: `Penjualan Sesi ${transaction.session_number || "-"}`
+      };
+
+      report += `**${index + 1}. Transaksi #${transaction.transaction_number || transaction.id}**\n`;
+      report += `Jenis: ${typeLabels[transaction.transaction_type] || transaction.transaction_type}\n`;
+      report += `Waktu: ${transaction.created_at ? new Date(transaction.created_at).toLocaleString("id-ID") : "-"}\n`;
+
+      (transaction.items || []).forEach(item => {
+        report += `- ${item.productName}: ${item.quantity} pcs\n`;
+      });
+
+      report += "\n";
+    });
+
+    addMessage(report, "ai");
+  } catch (error) {
+    addMessage(`Gagal memuat riwayat transaksi: ${error.message}`, "ai");
+  }
+}
+
+async function showDailyHistory(button) {
+  setActiveMenu(button);
+  closeSidebar();
+
+  if (!currentChat) {
+    currentChat = createChat();
+    chats.unshift(currentChat);
+  }
+
+  addMessage("Memuat riwayat sesi hari ini...", "ai");
+
+  try {
+    const date = getLocalDateString();
+    const response = await fetch(`/api/sessions?date=${encodeURIComponent(date)}`);
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || "Gagal memuat riwayat harian.");
+    }
+
+    let report = `## Riwayat Harian — ${date}\n\n`;
+    report += `Jumlah sesi: ${result.totalSessions}\n\n`;
+
+    result.sessions.forEach(session => {
+      report += `### Sesi ${session.sessionNumber} (${session.startTime}–${session.endTime})\n`;
+      report += `Status: ${session.status === "closed" ? "Ditutup" : "Terbuka"}\n`;
+
+      if (!session.summary || session.summary.length === 0) {
+        report += "Belum ada penjualan tercatat.\n\n";
+      } else {
+        session.summary.forEach(item => {
+          report += `- ${item.productName}: ${item.totalSold} pcs\n`;
+        });
+        report += "\n";
+      }
+    });
+
+    addMessage(report, "ai");
+  } catch (error) {
+    addMessage(`Gagal memuat riwayat harian: ${error.message}`, "ai");
+  }
+}
+
+function openStockSettings(button) {
+  setActiveMenu(button);
+  window.location.href = "stock-management.html";
 }
 
 function renderHistory() {
   const history = document.getElementById("chatHistory");
+  if (!history) return;
 
   history.innerHTML = chats.map(chat => `
-    <div class="history-item" onclick="openChat(${chat.id})">
+    <div class="history-item" onclick="openChat(${Number(chat.id)})">
       ${escapeHTML(chat.title)}
     </div>
   `).join("");
 }
 
 function openChat(id) {
-  currentChat = chats.find(c => c.id === id);
+  const selectedChat = chats.find(chat => chat.id === Number(id));
+  if (!selectedChat) return;
+
+  currentChat = selectedChat;
 
   const messages = document.getElementById("messages");
+  const welcome = document.getElementById("welcome");
+  if (!messages || !welcome) return;
+
   messages.innerHTML = "";
 
   currentChat.messages.forEach(msg => {
     addMessage(msg.text, msg.sender, false);
   });
 
-  document.getElementById("welcome").style.display = "none";
-  messages.style.display = "block";
-  toggleSidebar();
+  welcome.style.display = currentChat.messages.length ? "none" : "block";
+  messages.style.display = currentChat.messages.length ? "block" : "none";
+  closeSidebar();
 }
 
 
@@ -231,6 +384,7 @@ function addInlineFormatting(element, text) {
 
 async function sendMessage() {
   const input = document.getElementById("messageInput");
+  if (!input) return;
   const text = input.value.trim();
 
   if (!text && !selectedImage) return;
