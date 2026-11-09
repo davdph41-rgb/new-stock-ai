@@ -27,24 +27,121 @@ export default async function handler(req, res) {
   const model = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
 
   if (!apiKey) {
-    return res.status(500).json({ error: "GEMINI_API_KEY belum dikonfigurasi di Vercel." });
+    return res.status(500).json({
+      error: "GEMINI_API_KEY belum dikonfigurasi di Vercel."
+    });
   }
 
   try {
     const { messages, image } = req.body || {};
+
     if (!Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: "Pesan tidak boleh kosong." });
     }
 
-    if (image && (!image.mimeType?.startsWith("image/") || !image.data || image.data.length > 7_000_000)) {
-      return res.status(400).json({ error: "Format atau ukuran gambar tidak valid." });
+    if (
+      image &&
+      (!image.mimeType?.startsWith("image/") ||
+        !image.data ||
+        image.data.length > 7_000_000)
+    ) {
+      return res.status(400).json({
+        error: "Format atau ukuran gambar tidak valid."
+      });
     }
 
     const today = getJakartaDate();
     const baseUrl = getBaseUrl(req);
-    const lastUserMessage = [...messages].reverse().find(message => message.sender !== "ai");
+
+    const lastUserMessage = [...messages]
+      .reverse()
+      .find(message => message.sender !== "ai");
+
     const sourceText = String(lastUserMessage?.text || "");
     const requestSource = image?.data || sourceText;
+
+    // Mendeteksi pertanyaan stok.
+    const normalizedQuestion = sourceText.toLowerCase();
+
+    const asksOpeningStock =
+      /\bstok awal\b|\bstock awal\b/.test(normalizedQuestion);
+
+    const asksStock =
+      /\bstok\b|\bstock\b/.test(normalizedQuestion);
+
+    const looksLikeTransaction =
+      /reservasi|penjualan|terjual|nota|\bsesi\s*[123]\b|kurangkan|dikurangi|tambahkan|ubah stok|set stok/.test(
+        normalizedQuestion
+      );
+
+    const isStockQuestion =
+      !image && asksStock && !looksLikeTransaction;
+
+    // Pertanyaan stok langsung mengambil data dari database.
+    if (isStockQuestion) {
+      const url = new URL("/api/stock", baseUrl);
+
+      url.searchParams.set("date", today);
+
+      if (!asksOpeningStock) {
+        url.searchParams.set("mode", "current");
+      }
+
+      const stockResponse = await fetch(url);
+      const stockData = await stockResponse.json();
+
+      if (!stockResponse.ok || !stockData.success) {
+        return res.status(200).json({
+          reply: `Maaf, data stok tanggal ${today} belum dapat dibaca dari database. ${
+            stockData.error || "Silakan periksa data stok harian."
+          }`
+        });
+      }
+
+      let rows;
+      let heading;
+
+      if (asksOpeningStock) {
+        rows = (stockData.items || []).map(item => ({
+          name: item.name,
+          quantity: Number(item.openingQuantity || 0)
+        }));
+
+        heading = "STOK AWAL";
+      } else {
+        rows = (stockData.stock || []).map(item => ({
+          name: item.productName,
+          quantity: Number(item.remainingStock || 0)
+        }));
+
+        heading = "STOK TERBARU / TERSEDIA";
+      }
+
+      if (!rows.length) {
+        return res.status(200).json({
+          reply: `Belum ada data ${heading.toLowerCase()} untuk tanggal ${today}.`
+        });
+      }
+
+      const total = rows.reduce(
+        (sum, item) => sum + item.quantity,
+        0
+      );
+
+      const table = rows
+        .map(item => `| ${item.name} | ${item.quantity} pcs |`)
+        .join("\n");
+
+      const reply = `**${heading} — ${today}**
+
+| Produk | Jumlah |
+|---|---:|
+${table}
+| **TOTAL** | **${total} pcs** |`;
+
+      return res.status(200).json({ reply });
+    }
+
     const requestKey = createHash("sha256")
       .update(`${today}|${requestSource}`)
       .digest("hex");
@@ -81,7 +178,7 @@ JENIS TRANSAKSI:
 - Jangan simpan transaksi yang sama dua kali. Server akan menolak kiriman duplikat.
 
 FUNGSI:
-1. get_current_stock(date): membaca stock awal, reservasi, manual sales, sesi, dan sisa saat ini.
+1. get_current_stock(date): membaca stock awal dan stock tersisa untuk tanggal tertentu.
 2. record_stock_transaction(transactionType, date, sessionNumber, items, description): menyimpan transaksi nyata. Item harus berupa nama produk database dan jumlah positif. Untuk reservation/manual_sales, sessionNumber boleh null. Untuk session_sales wajib 1, 2, atau 3.
 
 JAWABAN:
@@ -98,67 +195,104 @@ JAWABAN:
 
     if (image) {
       const last = contents[contents.length - 1];
+
       last.parts.push({
-        inline_data: { mime_type: image.mimeType, data: image.data }
+        inline_data: {
+          mime_type: image.mimeType,
+          data: image.data
+        }
       });
     }
 
-    const tools = [{
-      function_declarations: [
-        {
-          name: "get_current_stock",
-          description: "Membaca stok awal dan stok tersisa untuk tanggal tertentu.",
-          parameters: {
-            type: "OBJECT",
-            properties: { date: { type: "STRING", description: "Tanggal YYYY-MM-DD" } },
-            required: ["date"]
-          }
-        },
-        {
-          name: "record_stock_transaction",
-          description: "Menyimpan reservasi atau penjualan yang benar-benar dikirim pengguna.",
-          parameters: {
-            type: "OBJECT",
-            properties: {
-              transactionType: { type: "STRING", enum: ["reservation", "manual_sales", "session_sales"] },
-              date: { type: "STRING", description: "Tanggal YYYY-MM-DD" },
-              sessionNumber: { type: "INTEGER", description: "1, 2, atau 3 untuk penjualan sesi; null untuk lainnya" },
-              items: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  properties: {
-                    productName: { type: "STRING" },
-                    quantity: { type: "INTEGER" }
-                  },
-                  required: ["productName", "quantity"]
+    const tools = [
+      {
+        function_declarations: [
+          {
+            name: "get_current_stock",
+            description: "Membaca stok awal dan stok tersisa untuk tanggal tertentu.",
+            parameters: {
+              type: "OBJECT",
+              properties: {
+                date: {
+                  type: "STRING",
+                  description: "Tanggal YYYY-MM-DD"
                 }
               },
-              description: { type: "STRING" }
-            },
-            required: ["transactionType", "date", "items"]
+              required: ["date"]
+            }
+          },
+          {
+            name: "record_stock_transaction",
+            description: "Menyimpan reservasi atau penjualan yang benar-benar dikirim pengguna.",
+            parameters: {
+              type: "OBJECT",
+              properties: {
+                transactionType: {
+                  type: "STRING",
+                  enum: ["reservation", "manual_sales", "session_sales"]
+                },
+                date: {
+                  type: "STRING",
+                  description: "Tanggal YYYY-MM-DD"
+                },
+                sessionNumber: {
+                  type: "INTEGER",
+                  description: "1, 2, atau 3 untuk penjualan sesi; null untuk lainnya"
+                },
+                items: {
+                  type: "ARRAY",
+                  items: {
+                    type: "OBJECT",
+                    properties: {
+                      productName: { type: "STRING" },
+                      quantity: { type: "INTEGER" }
+                    },
+                    required: ["productName", "quantity"]
+                  }
+                },
+                description: { type: "STRING" }
+              },
+              required: ["transactionType", "date", "items"]
+            }
           }
-        }
-      ]
-    }];
+        ]
+      }
+    ];
 
     async function callGemini() {
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey
+          },
           body: JSON.stringify({
-            system_instruction: { parts: [{ text: systemPrompt }] },
+            system_instruction: {
+              parts: [{ text: systemPrompt }]
+            },
             contents,
             tools,
-            tool_config: { function_calling_config: { mode: "AUTO" } },
-            generationConfig: { temperature: 0.15, maxOutputTokens: 2048 }
+            tool_config: {
+              function_calling_config: { mode: "AUTO" }
+            },
+            generationConfig: {
+              temperature: 0.15,
+              maxOutputTokens: 2048
+            }
           })
         }
       );
+
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error?.message || "Gemini API gagal.");
+
+      if (!response.ok) {
+        throw new Error(
+          result.error?.message || "Gemini API gagal."
+        );
+      }
+
       return result;
     }
 
@@ -168,39 +302,62 @@ JAWABAN:
       const candidate = result.candidates?.[0];
       const parts = candidate?.content?.parts || [];
       const calls = parts.filter(part => part.functionCall);
+
       if (!calls.length) break;
 
       contents.push(candidate.content);
+
       const functionResponses = [];
 
       for (const part of calls) {
         const call = part.functionCall;
         const args = call.args || {};
+
         let functionResult;
 
         if (call.name === "get_current_stock") {
           const date = args.date || today;
+
           if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-            functionResult = { success: false, error: "Format tanggal tidak valid." };
+            functionResult = {
+              success: false,
+              error: "Format tanggal tidak valid."
+            };
           } else {
             const url = new URL("/api/stock", baseUrl);
+
             url.searchParams.set("date", date);
             url.searchParams.set("mode", "current");
+
             const response = await fetch(url);
             functionResult = await response.json();
-            if (!response.ok) functionResult.success = false;
+
+            if (!response.ok) {
+              functionResult.success = false;
+            }
           }
         } else if (call.name === "record_stock_transaction") {
           const transactionType = args.transactionType;
           const date = args.date || today;
           const items = Array.isArray(args.items) ? args.items : [];
-          const response = await fetch(new URL("/api/products", baseUrl));
+
+          const response = await fetch(
+            new URL("/api/products", baseUrl)
+          );
+
           const productResult = await response.json();
 
           if (!response.ok || !productResult.success) {
-            functionResult = { success: false, error: "Tidak dapat membaca daftar produk." };
+            functionResult = {
+              success: false,
+              error: "Tidak dapat membaca daftar produk."
+            };
           } else {
-            const normalize = value => String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+            const normalize = value =>
+              String(value || "")
+                .toLowerCase()
+                .replace(/[^a-z0-9]/g, "");
+
             const aliases = {
               [normalize("Tempura Shrimp")]: "Prawn Mayo",
               [normalize("Tempura Shirmp")]: "Prawn Mayo",
@@ -211,7 +368,14 @@ JAWABAN:
               [normalize("Fish n Chips")]: "Fish & Chips",
               [normalize("Mix Platers")]: "Mix Platters"
             };
-            const productByName = new Map(productResult.products.map(product => [normalize(product.name), product]));
+
+            const productByName = new Map(
+              productResult.products.map(product => [
+                normalize(product.name),
+                product
+              ])
+            );
+
             const cleanItems = [];
             let mappingError = null;
 
@@ -220,54 +384,102 @@ JAWABAN:
               const mappedName = aliases[normalize(rawName)] || rawName;
               const product = productByName.get(normalize(mappedName));
               const quantity = Number(item.quantity);
-              if (!product || !Number.isSafeInteger(quantity) || quantity <= 0) {
+
+              if (
+                !product ||
+                !Number.isSafeInteger(quantity) ||
+                quantity <= 0
+              ) {
                 mappingError = `Produk atau jumlah tidak valid: ${rawName || "(kosong)"}.`;
                 break;
               }
-              const existing = cleanItems.find(entry => entry.productId === Number(product.id));
-              if (existing) existing.quantity += quantity;
-              else cleanItems.push({ productId: Number(product.id), quantity });
+
+              const existing = cleanItems.find(
+                entry => entry.productId === Number(product.id)
+              );
+
+              if (existing) {
+                existing.quantity += quantity;
+              } else {
+                cleanItems.push({
+                  productId: Number(product.id),
+                  quantity
+                });
+              }
             }
 
             if (mappingError || !cleanItems.length) {
-              functionResult = { success: false, error: mappingError || "Tidak ada produk yang dapat disimpan." };
+              functionResult = {
+                success: false,
+                error: mappingError || "Tidak ada produk yang dapat disimpan."
+              };
             } else {
-              const saveResponse = await fetch(new URL("/api/transactions", baseUrl), {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  transactionType,
-                  date,
-                  sessionNumber: args.sessionNumber ?? null,
-                  description: args.description || "Dicatat melalui Chat AI",
-                  items: cleanItems,
-                  requestKey
-                })
-              });
+              const saveResponse = await fetch(
+                new URL("/api/transactions", baseUrl),
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json"
+                  },
+                  body: JSON.stringify({
+                    transactionType,
+                    date,
+                    sessionNumber: args.sessionNumber ?? null,
+                    description: args.description || "Dicatat melalui Chat AI",
+                    items: cleanItems,
+                    requestKey
+                  })
+                }
+              );
+
               functionResult = await saveResponse.json();
-              if (!saveResponse.ok) functionResult.success = false;
+
+              if (!saveResponse.ok) {
+                functionResult.success = false;
+              }
             }
           }
         } else {
-          functionResult = { success: false, error: "Fungsi tidak tersedia." };
+          functionResult = {
+            success: false,
+            error: "Fungsi tidak tersedia."
+          };
         }
 
         functionResponses.push({
-          functionResponse: { name: call.name, response: functionResult }
+          functionResponse: {
+            name: call.name,
+            response: functionResult
+          }
         });
       }
 
-      contents.push({ role: "user", parts: functionResponses });
+      contents.push({
+        role: "user",
+        parts: functionResponses
+      });
+
       result = await callGemini();
     }
 
     const reply = result.candidates?.[0]?.content?.parts
-      ?.map(part => part.text || "").join("").trim();
+      ?.map(part => part.text || "")
+      .join("")
+      .trim();
 
-    if (!reply) return res.status(502).json({ error: "Gemini tidak menghasilkan jawaban." });
+    if (!reply) {
+      return res.status(502).json({
+        error: "Gemini tidak menghasilkan jawaban."
+      });
+    }
+
     return res.status(200).json({ reply });
+
   } catch (error) {
     console.error("Stock AI error:", error);
-    return res.status(500).json({ error: error.message || "Terjadi kesalahan pada server." });
+
+    return res.status(500).json({
+      error: error.message || "Terjadi kesalahan pada server."
+    });
   }
 }
