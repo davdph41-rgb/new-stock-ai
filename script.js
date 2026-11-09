@@ -87,7 +87,8 @@ function quickMessage(text) {
   sendMessage();
 }
 
-function sendMessage() {
+
+async function sendMessage() {
   const input = document.getElementById("messageInput");
   const text = input.value.trim();
 
@@ -98,9 +99,11 @@ function sendMessage() {
     chats.unshift(currentChat);
   }
 
+  const imageFile = selectedImage;
+
   let userText = text;
 
-  if (selectedImage) {
+  if (imageFile) {
     userText += "\n[Foto nota dilampirkan]";
   }
 
@@ -111,17 +114,71 @@ function sendMessage() {
   }
 
   input.value = "";
-
   clearPreview();
   renderHistory();
 
-  setTimeout(() => {
+  const sendBtn = document.getElementById("sendBtn");
+  sendBtn.disabled = true;
+  sendBtn.textContent = "...";
+
+  try {
+    let image = null;
+
+    if (imageFile) {
+      image = {
+        mimeType: imageFile.type,
+        data: await fileToBase64(imageFile)
+      };
+    }
+
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        messages: currentChat.messages.slice(-20),
+        image
+      })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || "Gemini API gagal.");
+    }
+
+    addMessage(result.reply, "ai");
+
+  } catch (error) {
     addMessage(
-      "Pesan berhasil diterima. Sistem AI Stock belum terhubung ke Gemini. Integrasi akan dibuat pada tahap berikutnya.",
+      "Maaf, terjadi kesalahan: " + error.message,
       "ai"
     );
-  }, 500);
+
+  } finally {
+    sendBtn.disabled = false;
+    sendBtn.textContent = "↑";
+  }
 }
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const base64 = reader.result.split(",")[1];
+      resolve(base64);
+    };
+
+    reader.onerror = () => reject(
+      new Error("Gagal membaca gambar.")
+    );
+
+    reader.readAsDataURL(file);
+  });
+}
+
 
 function handleEnter(event) {
   if (event.key === "Enter" && !event.shiftKey) {
