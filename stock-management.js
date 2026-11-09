@@ -120,14 +120,106 @@ function calculateTotal() {
 
   totalStock.textContent = `${total} pcs`;
 }
-
 // Tanggal berubah: ambil data dari Neon lagi
 dateInput.addEventListener("change", loadStock);
 
-// Simpan akan diaktifkan setelah API penyimpanan dibuat.
-saveButton.disabled = true;
-saveButton.textContent = "Simpan (menunggu API)";
+// SIMPAN STOK AWAL KE NEON
+async function saveStock() {
+  const date = dateInput.value;
+  const inputs = document.querySelectorAll(".product-input");
 
+  if (!date) {
+    showStatus("Pilih tanggal stok terlebih dahulu.", true);
+    return;
+  }
+
+  const items = [];
+
+  for (const input of inputs) {
+    const productId = Number(input.dataset.productId);
+    const quantity = Number(input.value);
+
+    if (
+      !Number.isSafeInteger(productId) ||
+      productId <= 0 ||
+      !Number.isSafeInteger(quantity) ||
+      quantity < 0
+    ) {
+      showStatus(
+        "Jumlah stok harus bilangan bulat dan tidak boleh negatif.",
+        true
+      );
+      input.focus();
+      return;
+    }
+
+    items.push({
+      productId,
+      quantity
+    });
+  }
+
+  if (items.length === 0) {
+    showStatus("Tidak ada produk untuk disimpan.", true);
+    return;
+  }
+
+  const confirmed = confirm(
+    `Simpan stok awal untuk tanggal ${date}?\n\n` +
+    `Jumlah produk: ${items.length}\n\n` +
+    "Jika tanggal tersebut sudah memiliki stok awal, " +
+    "data stok awal akan diperbarui."
+  );
+
+  if (!confirmed) return;
+
+  saveButton.disabled = true;
+  saveButton.textContent = "Menyimpan...";
+
+  try {
+    showStatus("Menyimpan stok ke database...");
+
+    const response = await fetch("/api/stock-save", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        date,
+        items
+      })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(
+        result.error || "Gagal menyimpan stok."
+      );
+    }
+
+    showStatus(
+      `Berhasil! Stok awal tanggal ${date} telah disimpan.`
+    );
+
+    await loadStock();
+
+  } catch (error) {
+    showStatus(error.message, true);
+
+  } finally {
+    saveButton.disabled = false;
+    saveButton.textContent = "Simpan Stok";
+  }
+}
+
+// Aktifkan tombol simpan
+saveButton.disabled = false;
+saveButton.textContent = "Simpan Stok";
+saveButton.addEventListener("click", saveStock);
+
+// Tanggal default
 dateInput.value = getToday();
 
+// Muat data produk
 loadProducts();
