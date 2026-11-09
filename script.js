@@ -359,3 +359,136 @@ function escapeHTML(text) {
   div.textContent = text;
   return div.innerHTML;
 }
+
+
+const PRODUCT_ALIASES = {
+  "mekencis": "Mekencis",
+  "mac n cheese": "Mekencis",
+  "mac n cheee": "Mekencis",
+  "mac and cheese": "Mekencis",
+
+  "prawn mayo": "Prawn Mayo",
+  "tempura shrimp": "Prawn Mayo",
+  "tempura shirmp": "Prawn Mayo",
+
+  "french fries sbs": "French Fries",
+  "french fries": "French Fries",
+
+  "chicken wings": "Chicken Wings",
+
+  "sembodro beef burger": "Beef Burger",
+  "beef burger": "Beef Burger",
+
+  "fish n chips": "Fish & Chips",
+  "fish and chips": "Fish & Chips",
+  "fish & chips": "Fish & Chips",
+
+  "mix platers": "Mix Platters",
+  "mix platters": "Mix Platters"
+};
+
+function normalizeProduct(name) {
+  const key = name.toLowerCase().trim();
+  return PRODUCT_ALIASES[key] || name.trim();
+}
+
+function parseStockItems(text) {
+  return text.split("\n")
+    .map(line => {
+      const match = line.match(/^(.+?)\s*[:=]\s*(\d+)\s*(?:pcs|pc)?$/i);
+
+      if (!match) return null;
+
+      return {
+        name: normalizeProduct(match[1]),
+        quantity: Number(match[2])
+      };
+    })
+    .filter(Boolean);
+}
+
+function formatStockTable(stock) {
+  const entries = Object.entries(stock);
+
+  if (!entries.length) return "Belum ada data stok.";
+
+  let result = "| Produk | Jumlah |\n";
+  result += "|---|---:|\n";
+
+  entries.forEach(([name, quantity]) => {
+    result += `| ${name} | ${quantity} pcs |\n`;
+  });
+
+  return result;
+}
+
+function handleStockCommand(text) {
+  const command = text.trim();
+  const firstLine = command.split("\n")[0].trim().toUpperCase();
+
+  try {
+    // STOK AWAL
+    if (firstLine === "STOK AWAL") {
+      const items = parseStockItems(command);
+
+      if (!items.length) {
+        return "Format stok awal belum benar. Gunakan nama produk: jumlah.";
+      }
+
+      const balance = StockEngine.setOpeningStock(items);
+
+      const total = Object.values(balance)
+        .reduce((sum, value) => sum + value, 0);
+
+      return `## Stok Awal Berhasil Dicatat\n\n${formatStockTable(balance)}\n**Total stok: ${total} pcs**`;
+    }
+
+    // CEK STOK
+    if (firstLine === "CEK STOK") {
+      const summary = StockEngine.getSummary();
+
+      return `## Ringkasan Stok Hari Ini\n\n${formatStockTable(summary.remainingStock)}\n**Stok awal: ${summary.openingTotal} pcs**\n\n**Sisa stok: ${summary.remainingTotal} pcs**\n\n**Total transaksi: ${summary.totalTransactions}**`;
+    }
+
+    // TRANSAKSI
+    const transactionTypes = {
+      "RESERVASI": "Reservasi",
+      "SESI 1": "Session Sales",
+      "SESI 2": "Session Sales",
+      "SESI 3": "Session Sales",
+      "MANUAL": "Manual Sales"
+    };
+
+    if (transactionTypes[firstLine]) {
+      const items = parseStockItems(command);
+
+      if (!items.length) {
+        return "Data produk belum ditemukan. Gunakan format Nama Produk: Jumlah.";
+      }
+
+      const session = /^SESI [123]$/.test(firstLine)
+        ? firstLine
+        : null;
+
+      const transaction = StockEngine.addTransaction(
+        transactionTypes[firstLine],
+        items,
+        session
+      );
+
+      const summary = StockEngine.getSummary();
+
+      return `## Transaksi Berhasil Dicatat\n\n**Nomor transaksi:** ${transaction.id}\n**Jenis:** ${transaction.type}\n${session ? `**Sesi:** ${session}\n` : ""}\n**Produk yang dikurangi:**\n\n${formatStockTable(
+        Object.fromEntries(
+          transaction.items.map(item => [item.name, item.quantity])
+        )
+      )}\n**Sisa stok sekarang: ${summary.remainingTotal} pcs**`;
+    }
+
+    return null;
+
+  } catch (error) {
+    return `## Transaksi Tidak Berhasil\n\n${error.message}`;
+  }
+}
+
