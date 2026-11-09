@@ -2,6 +2,39 @@
 let selectedImage = null;
 let chats = [];
 let currentChat = null;
+const CHAT_STORAGE_KEY = "stock_ai_chats_v1";
+
+function saveChats() {
+  try {
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(chats.slice(0, 60)));
+  } catch (error) {
+    console.warn("Riwayat chat tidak dapat disimpan:", error);
+  }
+}
+
+function loadChats() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CHAT_STORAGE_KEY) || "[]");
+    chats = Array.isArray(saved) ? saved.filter(chat => chat && chat.id && Array.isArray(chat.messages)) : [];
+  } catch {
+    chats = [];
+  }
+  renderHistory();
+  if (chats.length) openChat(chats[0].id);
+}
+
+function promptHistoryDate() {
+  const value = window.prompt(
+    "Masukkan tanggal riwayat (YYYY-MM-DD):",
+    getLocalDateString()
+  );
+  if (value === null) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    alert("Format tanggal harus YYYY-MM-DD.");
+    return null;
+  }
+  return value.trim();
+}
 
 function createChat() {
   return {
@@ -21,6 +54,7 @@ function newChat() {
   document.getElementById("messageInput").value = "";
 
   renderHistory();
+  saveChats();
 }
 
 function toggleSidebar() {
@@ -84,10 +118,11 @@ async function showTransactionHistory(button) {
     chats.unshift(currentChat);
   }
 
-  addMessage("Memuat riwayat transaksi hari ini...", "ai");
+  const date = promptHistoryDate();
+  if (!date) return;
+  addMessage(`Memuat riwayat transaksi ${date}...`, "ai");
 
   try {
-    const date = getLocalDateString();
     const response = await fetch(`/api/transactions?date=${encodeURIComponent(date)}`);
     const result = await response.json();
 
@@ -134,10 +169,11 @@ async function showDailyHistory(button) {
     chats.unshift(currentChat);
   }
 
-  addMessage("Memuat riwayat sesi hari ini...", "ai");
+  const date = promptHistoryDate();
+  if (!date) return;
+  addMessage(`Memuat riwayat sesi ${date}...`, "ai");
 
   try {
-    const date = getLocalDateString();
     const response = await fetch(`/api/sessions?date=${encodeURIComponent(date)}`);
     const result = await response.json();
 
@@ -182,6 +218,7 @@ function renderHistory() {
       ${escapeHTML(chat.title)}
     </div>
   `).join("");
+  saveChats();
 }
 
 function openChat(id) {
@@ -203,6 +240,7 @@ function openChat(id) {
   welcome.style.display = currentChat.messages.length ? "none" : "block";
   messages.style.display = currentChat.messages.length ? "block" : "none";
   closeSidebar();
+  saveChats();
 }
 
 
@@ -236,6 +274,7 @@ function addMessage(text, sender, save = true) {
 
   if (save && currentChat) {
     currentChat.messages.push({ text, sender });
+    saveChats();
   }
 
   messages.scrollTop = messages.scrollHeight;
@@ -411,15 +450,7 @@ async function sendMessage() {
   input.value = "";
   clearPreview();
   renderHistory();
-
-  if (!imageFile) {
-  const stockReply = handleStockCommand(text);
-
-  if (stockReply) {
-    addMessage(stockReply, "ai");
-    return;
-  }
-  }
+  saveChats();
 
   const sendBtn = document.getElementById("sendBtn");
   sendBtn.disabled = true;
@@ -429,10 +460,7 @@ async function sendMessage() {
     let image = null;
 
     if (imageFile) {
-      image = {
-        mimeType: imageFile.type,
-        data: await fileToBase64(imageFile)
-      };
+      image = await compressImage(imageFile);
     }
 
     const response = await fetch("/api/chat", {
@@ -466,21 +494,37 @@ async function sendMessage() {
   }
 }
 
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
+async function compressImage(file) {
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    throw new Error("Foto tidak dapat dibaca. Coba pilih gambar JPG atau PNG.");
+  }
+
+  const maxSide = 1600;
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+
+  const context = canvas.getContext("2d");
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close?.();
+
+  const blob = await new Promise(resolve =>
+    canvas.toBlob(resolve, "image/jpeg", 0.82)
+  );
+  if (!blob) throw new Error("Gagal menyiapkan foto nota.");
+
+  const data = await new Promise((resolve, reject) => {
     const reader = new FileReader();
-
-    reader.onload = () => {
-      const base64 = reader.result.split(",")[1];
-      resolve(base64);
-    };
-
-    reader.onerror = () => reject(
-      new Error("Gagal membaca gambar.")
-    );
-
-    reader.readAsDataURL(file);
+    reader.onload = () => resolve(String(reader.result).split(",")[1]);
+    reader.onerror = () => reject(new Error("Gagal membaca foto."));
+    reader.readAsDataURL(blob);
   });
+
+  return { mimeType: "image/jpeg", data };
 }
 
 
@@ -524,134 +568,6 @@ function escapeHTML(text) {
 }
 
 
-const PRODUCT_ALIASES = {
-  "mekencis": "Mekencis",
-  "mac n cheese": "Mekencis",
-  "mac n cheee": "Mekencis",
-  "mac and cheese": "Mekencis",
 
-  "prawn mayo": "Prawn Mayo",
-  "tempura shrimp": "Prawn Mayo",
-  "tempura shirmp": "Prawn Mayo",
-
-  "french fries sbs": "French Fries",
-  "french fries": "French Fries",
-
-  "chicken wings": "Chicken Wings",
-
-  "sembodro beef burger": "Beef Burger",
-  "beef burger": "Beef Burger",
-
-  "fish n chips": "Fish & Chips",
-  "fish and chips": "Fish & Chips",
-  "fish & chips": "Fish & Chips",
-
-  "mix platers": "Mix Platters",
-  "mix platters": "Mix Platters"
-};
-
-function normalizeProduct(name) {
-  const key = name.toLowerCase().trim();
-  return PRODUCT_ALIASES[key] || name.trim();
-}
-
-function parseStockItems(text) {
-  return text.split("\n")
-    .map(line => {
-      const match = line.match(/^(.+?)\s*[:=]\s*(\d+)\s*(?:pcs|pc)?$/i);
-
-      if (!match) return null;
-
-      return {
-        name: normalizeProduct(match[1]),
-        quantity: Number(match[2])
-      };
-    })
-    .filter(Boolean);
-}
-
-function formatStockTable(stock) {
-  const entries = Object.entries(stock);
-
-  if (!entries.length) return "Belum ada data stok.";
-
-  let result = "| Produk | Jumlah |\n";
-  result += "|---|---:|\n";
-
-  entries.forEach(([name, quantity]) => {
-    result += `| ${name} | ${quantity} pcs |\n`;
-  });
-
-  return result;
-}
-
-function handleStockCommand(text) {
-  const command = text.trim();
-  const firstLine = command.split("\n")[0].trim().toUpperCase();
-
-  try {
-    // STOK AWAL
-    if (firstLine === "STOK AWAL") {
-      const items = parseStockItems(command);
-
-      if (!items.length) {
-        return "Format stok awal belum benar. Gunakan nama produk: jumlah.";
-      }
-
-      const balance = StockEngine.setOpeningStock(items);
-
-      const total = Object.values(balance)
-        .reduce((sum, value) => sum + value, 0);
-
-      return `## Stok Awal Berhasil Dicatat\n\n${formatStockTable(balance)}\n**Total stok: ${total} pcs**`;
-    }
-
-    // CEK STOK
-    if (firstLine === "CEK STOK") {
-      const summary = StockEngine.getSummary();
-
-      return `## Ringkasan Stok Hari Ini\n\n${formatStockTable(summary.remainingStock)}\n**Stok awal: ${summary.openingTotal} pcs**\n\n**Sisa stok: ${summary.remainingTotal} pcs**\n\n**Total transaksi: ${summary.totalTransactions}**`;
-    }
-
-    // TRANSAKSI
-    const transactionTypes = {
-      "RESERVASI": "Reservasi",
-      "SESI 1": "Session Sales",
-      "SESI 2": "Session Sales",
-      "SESI 3": "Session Sales",
-      "MANUAL": "Manual Sales"
-    };
-
-    if (transactionTypes[firstLine]) {
-      const items = parseStockItems(command);
-
-      if (!items.length) {
-        return "Data produk belum ditemukan. Gunakan format Nama Produk: Jumlah.";
-      }
-
-      const session = /^SESI [123]$/.test(firstLine)
-        ? firstLine
-        : null;
-
-      const transaction = StockEngine.addTransaction(
-        transactionTypes[firstLine],
-        items,
-        session
-      );
-
-      const summary = StockEngine.getSummary();
-
-      return `## Transaksi Berhasil Dicatat\n\n**Nomor transaksi:** ${transaction.id}\n**Jenis:** ${transaction.type}\n${session ? `**Sesi:** ${session}\n` : ""}\n**Produk yang dikurangi:**\n\n${formatStockTable(
-        Object.fromEntries(
-          transaction.items.map(item => [item.name, item.quantity])
-        )
-      )}\n**Sisa stok sekarang: ${summary.remainingTotal} pcs**`;
-    }
-
-    return null;
-
-  } catch (error) {
-    return `## Transaksi Tidak Berhasil\n\n${error.message}`;
-  }
-}
-
+// Pulihkan daftar percakapan setelah halaman dibuka ulang.
+loadChats();
