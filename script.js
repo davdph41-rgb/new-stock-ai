@@ -258,6 +258,15 @@ async function sendMessage() {
   clearPreview();
   renderHistory();
 
+  if (!imageFile) {
+  const stockReply = handleStockCommand(text);
+
+  if (stockReply) {
+    addMessage(stockReply, "ai");
+    return;
+  }
+  }
+
   const sendBtn = document.getElementById("sendBtn");
   sendBtn.disabled = true;
   sendBtn.textContent = "...";
