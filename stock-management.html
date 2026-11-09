@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock Management - Stock AI</title>
+  <link rel="stylesheet" href="stock-management.css">
+</head>
+<body>
+
+  <main class="management-app">
+    <header class="management-header">
+      <a href="index.html" class="back-link">← Kembali ke Chat</a>
+      <h1>Stock Management</h1>
+      <p>Kelola dan perbarui stok awal produk.</p>
+    </header>
+
+    <section class="stock-card">
+      <label for="stockDate">Tanggal stok</label>
+      <input type="date" id="stockDate">
+
+      <div class="section-heading">
+        <h2>Daftar Produk</h2>
+        <span id="productCount">Memuat...</span>
+      </div>
+
+      <div id="productList">
+        <p>Memuat daftar produk...</p>
+      </div>
+
+      <div class="stock-total">
+        <span>Total stok awal</span>
+        <strong id="totalStock">0 pcs</strong>
+      </div>
+
+      <button id="saveStockBtn" type="button">
+        Simpan Stok Awal
+      </button>
+
+      <p id="statusMessage" role="status"></p>
+    </section>
+  </main>
+
+  <script src="stock-management.js"></script>
+</body>
+</html>
