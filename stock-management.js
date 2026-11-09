@@ -1,3 +1,4 @@
+
 const dateInput = document.getElementById("stockDate");
 const productList = document.getElementById("productList");
 const totalStock = document.getElementById("totalStock");
@@ -5,7 +6,15 @@ const productCount = document.getElementById("productCount");
 const saveButton = document.getElementById("saveStockBtn");
 const statusMessage = document.getElementById("statusMessage");
 
+const historyList = document.getElementById("stockHistoryList");
+const historyStatus = document.getElementById("historyStatus");
+const refreshHistoryBtn = document.getElementById("refreshHistoryBtn");
+
 let products = [];
+
+// ================================
+// TANGGAL
+// ================================
 
 function getToday() {
   const now = new Date();
@@ -16,13 +25,23 @@ function getToday() {
   return `${year}-${month}-${day}`;
 }
 
+// ================================
+// STATUS
+// ================================
+
 function showStatus(message, error = false) {
   statusMessage.textContent = message;
   statusMessage.style.color = error ? "#ef7777" : "#10a37f";
 }
 
+// ================================
+// MEMUAT PRODUK
+// ================================
+
 async function loadProducts() {
   try {
+    productList.textContent = "Memuat daftar produk...";
+
     const response = await fetch("/api/products");
     const result = await response.json();
 
@@ -41,6 +60,10 @@ async function loadProducts() {
     showStatus("Gagal memuat daftar produk.", true);
   }
 }
+
+// ================================
+// MEMUAT STOK DARI NEON
+// ================================
 
 async function loadStock() {
   try {
@@ -74,9 +97,13 @@ async function loadStock() {
 
   } catch (error) {
     productList.textContent = error.message;
-    showStatus("Gagal memuat stok.", true);
+    showStatus("Gagal memuat stok: " + error.message, true);
   }
 }
+
+// ================================
+// MENAMPILKAN PRODUK
+// ================================
 
 function renderProducts(savedStock = {}) {
   productList.innerHTML = "";
@@ -96,6 +123,7 @@ function renderProducts(savedStock = {}) {
     input.className = "product-input";
     input.dataset.productId = product.id;
     input.value = savedStock[product.id] ?? 0;
+
     input.setAttribute("aria-label", `Stok ${product.name}`);
 
     input.addEventListener("input", calculateTotal);
@@ -106,6 +134,10 @@ function renderProducts(savedStock = {}) {
 
   calculateTotal();
 }
+
+// ================================
+// MENGHITUNG TOTAL STOK
+// ================================
 
 function calculateTotal() {
   let total = 0;
@@ -120,10 +152,11 @@ function calculateTotal() {
 
   totalStock.textContent = `${total} pcs`;
 }
-// Tanggal berubah: ambil data dari Neon lagi
-dateInput.addEventListener("change", loadStock);
 
-// SIMPAN STOK AWAL KE NEON
+// ================================
+// MENYIMPAN STOK AWAL
+// ================================
+
 async function saveStock() {
   const date = dateInput.value;
   const inputs = document.querySelectorAll(".product-input");
@@ -149,6 +182,7 @@ async function saveStock() {
         "Jumlah stok harus bilangan bulat dan tidak boleh negatif.",
         true
       );
+
       input.focus();
       return;
     }
@@ -199,11 +233,13 @@ async function saveStock() {
     }
 
     showStatus(
-  `Berhasil! Stok awal tanggal ${date} telah disimpan.`
-);
+      `Berhasil! Stok awal tanggal ${date} telah disimpan.`
+    );
 
-await loadStock();
-await loadStockHistory();
+    // Muat ulang stok dan riwayat
+    await loadStock();
+    await loadStockHistory();
+
   } catch (error) {
     showStatus(error.message, true);
 
@@ -213,22 +249,9 @@ await loadStockHistory();
   }
 }
 
-// Aktifkan tombol simpan
-saveButton.disabled = false;
-saveButton.textContent = "Simpan Stok";
-saveButton.addEventListener("click", saveStock);
-
-// Tanggal default
-dateInput.value = getToday();
-
-// Muat data produk
 // ================================
-// RIWAYAT PERUBAHAN STOK
+// MEMBACA RIWAYAT PERUBAHAN STOK
 // ================================
-
-const historyList = document.getElementById("stockHistoryList");
-const historyStatus = document.getElementById("historyStatus");
-const refreshHistoryBtn = document.getElementById("refreshHistoryBtn");
 
 async function loadStockHistory() {
   try {
@@ -244,12 +267,15 @@ async function loadStockHistory() {
     const result = await response.json();
 
     if (!response.ok || !result.success) {
-      throw new Error(result.error || "Gagal mengambil riwayat.");
+      throw new Error(
+        result.error || "Gagal mengambil riwayat."
+      );
     }
 
-    if (result.history.length === 0) {
+    if (!Array.isArray(result.history) || result.history.length === 0) {
       historyStatus.textContent = "Belum ada perubahan stok.";
-      historyList.textContent = "Riwayat perubahan stok masih kosong.";
+      historyList.textContent =
+        "Riwayat perubahan stok masih kosong.";
       return;
     }
 
@@ -260,29 +286,51 @@ async function loadStockHistory() {
       const card = document.createElement("div");
       card.className = "history-item";
 
-      const date = new Date(item.changedAt);
+      const header = document.createElement("div");
+      header.className = "history-item-header";
 
-      card.innerHTML = `
-        <div class="history-item-header">
-          <strong>${escapeHTML(item.productName)}</strong>
-          <span>${date.toLocaleString("id-ID")}</span>
-        </div>
+      const name = document.createElement("strong");
+      name.textContent = item.productName;
 
-        <div class="history-quantities">
-          <div>
-            <small>Stok sebelumnya</small>
-            <strong>${item.oldQuantity} pcs</strong>
-          </div>
+      const time = document.createElement("span");
 
-          <span>→</span>
+      const dateObject = new Date(item.changedAt);
 
-          <div>
-            <small>Stok terbaru</small>
-            <strong>${item.newQuantity} pcs</strong>
-          </div>
-        </div>
-      `;
+      time.textContent = Number.isNaN(dateObject.getTime())
+        ? item.date
+        : dateObject.toLocaleString("id-ID");
 
+      header.append(name, time);
+
+      const quantities = document.createElement("div");
+      quantities.className = "history-quantities";
+
+      const oldBox = document.createElement("div");
+
+      const oldLabel = document.createElement("small");
+      oldLabel.textContent = "Stok sebelumnya";
+
+      const oldValue = document.createElement("strong");
+      oldValue.textContent = `${item.oldQuantity} pcs`;
+
+      oldBox.append(oldLabel, oldValue);
+
+      const arrow = document.createElement("span");
+      arrow.textContent = "→";
+
+      const newBox = document.createElement("div");
+
+      const newLabel = document.createElement("small");
+      newLabel.textContent = "Stok terbaru";
+
+      const newValue = document.createElement("strong");
+      newValue.textContent = `${item.newQuantity} pcs`;
+
+      newBox.append(newLabel, newValue);
+
+      quantities.append(oldBox, arrow, newBox);
+
+      card.append(header, quantities);
       historyList.appendChild(card);
     });
 
@@ -292,16 +340,29 @@ async function loadStockHistory() {
   }
 }
 
-function escapeHTML(value) {
-  const element = document.createElement("span");
-  element.textContent = String(value ?? "");
-  return element.innerHTML;
-}
+// ================================
+// EVENT LISTENERS
+// ================================
 
-// Tombol muat ulang
+// Tanggal berubah
+dateInput.addEventListener("change", async () => {
+  await loadStock();
+  await loadStockHistory();
+});
+
+// Tombol simpan
+saveButton.disabled = false;
+saveButton.textContent = "Simpan Stok";
+saveButton.addEventListener("click", saveStock);
+
+// Tombol muat ulang riwayat
 refreshHistoryBtn.addEventListener("click", loadStockHistory);
 
-// Muat riwayat saat halaman dibuka
-loadStockHistory();
+// ================================
+// INISIALISASI HALAMAN
+// ================================
 
-// Muat ulang riwayat setelah stok berhasil disimpan
+dateInput.value = getToday();
+
+loadProducts();
+loadStockHistory();
