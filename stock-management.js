@@ -222,4 +222,86 @@ saveButton.addEventListener("click", saveStock);
 dateInput.value = getToday();
 
 // Muat data produk
-loadProducts();
+// ================================
+// RIWAYAT PERUBAHAN STOK
+// ================================
+
+const historyList = document.getElementById("stockHistoryList");
+const historyStatus = document.getElementById("historyStatus");
+const refreshHistoryBtn = document.getElementById("refreshHistoryBtn");
+
+async function loadStockHistory() {
+  try {
+    historyStatus.textContent = "Memuat riwayat...";
+    historyList.innerHTML = "";
+
+    const date = dateInput.value;
+
+    const response = await fetch(
+      `/api/stock-history?date=${encodeURIComponent(date)}&limit=100`
+    );
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || "Gagal mengambil riwayat.");
+    }
+
+    if (result.history.length === 0) {
+      historyStatus.textContent = "Belum ada perubahan stok.";
+      historyList.textContent = "Riwayat perubahan stok masih kosong.";
+      return;
+    }
+
+    historyStatus.textContent =
+      `${result.total} catatan perubahan ditemukan.`;
+
+    result.history.forEach(item => {
+      const card = document.createElement("div");
+      card.className = "history-item";
+
+      const date = new Date(item.changedAt);
+
+      card.innerHTML = `
+        <div class="history-item-header">
+          <strong>${escapeHTML(item.productName)}</strong>
+          <span>${date.toLocaleString("id-ID")}</span>
+        </div>
+
+        <div class="history-quantities">
+          <div>
+            <small>Stok sebelumnya</small>
+            <strong>${item.oldQuantity} pcs</strong>
+          </div>
+
+          <span>→</span>
+
+          <div>
+            <small>Stok terbaru</small>
+            <strong>${item.newQuantity} pcs</strong>
+          </div>
+        </div>
+      `;
+
+      historyList.appendChild(card);
+    });
+
+  } catch (error) {
+    historyStatus.textContent = "Gagal memuat riwayat.";
+    historyList.textContent = error.message;
+  }
+}
+
+function escapeHTML(value) {
+  const element = document.createElement("span");
+  element.textContent = String(value ?? "");
+  return element.innerHTML;
+}
+
+// Tombol muat ulang
+refreshHistoryBtn.addEventListener("click", loadStockHistory);
+
+// Muat riwayat saat halaman dibuka
+loadStockHistory();
+
+// Muat ulang riwayat setelah stok berhasil disimpan
