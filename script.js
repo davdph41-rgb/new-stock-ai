@@ -52,6 +52,7 @@ function openChat(id) {
   toggleSidebar();
 }
 
+
 function addMessage(text, sender, save = true) {
   const messages = document.getElementById("messages");
 
@@ -70,7 +71,12 @@ function addMessage(text, sender, save = true) {
 
   const content = document.createElement("div");
   content.className = "message-content";
-  content.textContent = text;
+
+  if (sender === "ai") {
+    renderAIMessage(content, text);
+  } else {
+    content.textContent = text;
+  }
 
   message.appendChild(content);
   messages.appendChild(message);
@@ -82,10 +88,145 @@ function addMessage(text, sender, save = true) {
   messages.scrollTop = messages.scrollHeight;
 }
 
-function quickMessage(text) {
-  document.getElementById("messageInput").value = text;
-  sendMessage();
+
+// MEMBACA FORMAT JAWABAN AI
+
+function renderAIMessage(container, text) {
+  const lines = text.split("\n");
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i].trim();
+
+    if (!line) {
+      i++;
+      continue;
+    }
+
+    // TABEL
+    if (line.startsWith("|") && lines[i + 1]?.includes("---")) {
+      const table = document.createElement("table");
+      table.className = "ai-table";
+
+      const headers = line
+        .split("|")
+        .slice(1, -1)
+        .map(x => x.trim());
+
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+
+      headers.forEach(header => {
+        const th = document.createElement("th");
+        th.textContent = header;
+        headerRow.appendChild(th);
+      });
+
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+
+      const tbody = document.createElement("tbody");
+      i += 2;
+
+      while (i < lines.length && lines[i].trim().startsWith("|")) {
+        const values = lines[i]
+          .trim()
+          .split("|")
+          .slice(1, -1)
+          .map(x => x.trim());
+
+        const row = document.createElement("tr");
+
+        values.forEach(value => {
+          const td = document.createElement("td");
+          addInlineFormatting(td, value);
+          row.appendChild(td);
+        });
+
+        tbody.appendChild(row);
+        i++;
+      }
+
+      table.appendChild(tbody);
+      container.appendChild(table);
+      continue;
+    }
+
+    // JUDUL UTAMA
+    if (line.startsWith("## ")) {
+      const heading = document.createElement("h2");
+      addInlineFormatting(heading, line.slice(3));
+      container.appendChild(heading);
+      i++;
+      continue;
+    }
+
+    // SUBJUDUL
+    if (line.startsWith("### ")) {
+      const heading = document.createElement("h3");
+      addInlineFormatting(heading, line.slice(4));
+      container.appendChild(heading);
+      i++;
+      continue;
+    }
+
+    // LIST
+    if (/^[-*] /.test(line)) {
+      const list = document.createElement("div");
+      list.className = "ai-list";
+
+      while (
+        i < lines.length &&
+        /^[-*] /.test(lines[i].trim())
+      ) {
+        const item = document.createElement("div");
+        item.className = "ai-list-item";
+
+        const bullet = document.createElement("span");
+        bullet.textContent = "•";
+
+        const content = document.createElement("span");
+        addInlineFormatting(
+          content,
+          lines[i].trim().slice(2)
+        );
+
+        item.append(bullet, content);
+        list.appendChild(item);
+        i++;
+      }
+
+      container.appendChild(list);
+      continue;
+    }
+
+    // PARAGRAF
+    const paragraph = document.createElement("p");
+    addInlineFormatting(paragraph, line);
+    container.appendChild(paragraph);
+    i++;
+  }
 }
+
+
+// FORMAT BOLD DAN TEKS BIASA
+
+function addInlineFormatting(element, text) {
+  const parts = text.split(/(\*\*.*?\*\*)/g);
+
+  parts.forEach(part => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      const bold = document.createElement("strong");
+      bold.textContent = part.slice(2, -2);
+      element.appendChild(bold);
+    } else {
+      element.appendChild(
+        document.createTextNode(part)
+      );
+    }
+  });
+}
+
 
 
 async function sendMessage() {
