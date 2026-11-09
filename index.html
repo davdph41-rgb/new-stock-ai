@@ -1,0 +1,156 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock AI</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+
+  <aside class="sidebar" id="sidebar">
+    <div class="side-header">
+      <div class="brand">
+        <div class="brand-icon">S</div>
+        <span>Stock AI</span>
+      </div>
+      <button class="icon-btn close-menu" onclick="toggleSidebar()">✕</button>
+    </div>
+
+    <button class="new-chat" onclick="newChat()">
+      <span>＋</span> Chat Baru
+    </button>
+
+    <div class="side-label">MENU</div>
+
+    <button class="nav-item active">
+      <span>◈</span> Percakapan
+    </button>
+
+    <button class="nav-item">
+      <span>▤</span> Riwayat Transaksi
+    </button>
+
+    <button class="nav-item">
+      <span>▦</span> Riwayat Harian
+    </button>
+
+    <button class="nav-item">
+      <span>⚙</span> Pengaturan
+    </button>
+
+    <div class="history">
+      <div class="side-label">RIWAYAT CHAT</div>
+      <div id="chatHistory"></div>
+    </div>
+
+    <div class="profile">
+      <div class="avatar">S</div>
+      <div>
+        <strong>Stock AI</strong>
+        <small>Inventory Assistant</small>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <header class="topbar">
+      <button class="icon-btn menu-btn" onclick="toggleSidebar()">☰</button>
+      <div class="mobile-brand">Stock AI</div>
+      <div class="status">
+        <span class="status-dot"></span>
+        Sistem aktif
+      </div>
+    </header>
+
+    <section class="chat-area" id="chatArea">
+
+      <div class="welcome" id="welcome">
+        <div class="welcome-icon">▦</div>
+        <h1>Stock AI</h1>
+        <p>Asisten AI khusus untuk pengelolaan dan penghitungan stok.</p>
+
+        <div class="suggestions">
+          <button onclick="quickMessage('Saya ingin memasukkan stok awal hari ini.')">
+            <span>＋</span>
+            <div>
+              <strong>Masukkan stok awal</strong>
+              <small>Catat total persediaan hari ini</small>
+            </div>
+          </button>
+
+          <button onclick="quickMessage('Saya ingin mencatat reservasi.')">
+            <span>▤</span>
+            <div>
+              <strong>Catat reservasi</strong>
+              <small>Kurangi stok berdasarkan pesanan</small>
+            </div>
+          </button>
+
+          <button onclick="quickMessage('Tampilkan ringkasan stok hari ini.')">
+            <span>◷</span>
+            <div>
+              <strong>Cek stok</strong>
+              <small>Lihat kondisi stok saat ini</small>
+            </div>
+          </button>
+
+          <button onclick="quickMessage('Saya ingin mencatat penjualan manual.')">
+            <span>↗</span>
+            <div>
+              <strong>Penjualan manual</strong>
+              <small>Catat pengurangan stok tambahan</small>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <div class="messages" id="messages"></div>
+
+    </section>
+
+    <footer class="input-container">
+
+      <div class="preview" id="preview"></div>
+
+      <div class="input-box">
+        <input
+          type="file"
+          id="fileInput"
+          accept="image/*"
+          hidden
+          onchange="previewImage(event)"
+        >
+
+        <button class="attach-btn" onclick="document.getElementById('fileInput').click()">
+          ＋
+        </button>
+
+        <textarea
+          id="messageInput"
+          placeholder="Kirim pesan atau foto nota..."
+          rows="1"
+          onkeydown="handleEnter(event)"
+        ></textarea>
+
+        <button class="send-btn" onclick="sendMessage()" id="sendBtn">
+          ↑
+        </button>
+      </div>
+
+      <p class="disclaimer">
+        Stock AI hanya digunakan untuk pengelolaan dan penghitungan stok.
+      </p>
+
+    </footer>
+
+  </main>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
