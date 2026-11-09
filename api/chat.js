@@ -7,7 +7,8 @@ export default async function handler(req, res) {
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
-  const model = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
+  const model =
+    process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
 
   if (!apiKey) {
     return res.status(500).json({
@@ -49,16 +50,14 @@ KAMUS PRODUK:
 - Mix Platters = Mix Platers
 
 ATURAN MEMBACA STOK:
-- Kamu memiliki fungsi get_stock untuk membaca stok awal dari database Neon.
-- Jika pengguna bertanya tentang stok, gunakan fungsi get_stock.
-- Jika pengguna menyebut hari ini, gunakan tanggal ${today}.
-- Jika pengguna menyebut tanggal tertentu, gunakan tanggal tersebut dalam format YYYY-MM-DD.
+- Gunakan fungsi get_stock jika pengguna bertanya tentang stok.
+- Jika tanggal tidak diberikan, gunakan tanggal hari ini.
+- Jika pengguna menyebut tanggal tertentu, gunakan format YYYY-MM-DD.
 - Jangan mengarang data stok.
-- Gunakan hanya hasil yang dikembalikan fungsi get_stock.
-- Jika data stok tidak ditemukan, jelaskan bahwa data belum tersedia.
-- Data yang dibaca saat ini adalah stok awal, bukan stok akhir setelah penjualan.
-- Jangan menyebut stok awal sebagai stok akhir.
-- Fungsi get_stock hanya untuk membaca. Jangan mengaku telah mengubah atau menyimpan stok.
+- Gunakan hanya hasil dari get_stock.
+- Jika data tidak ditemukan, jelaskan bahwa data belum tersedia.
+- Data API saat ini adalah stok awal, bukan stok akhir setelah penjualan.
+- Jangan mengaku telah mengubah atau menyimpan stok.
 
 ATURAN UMUM:
 - Gunakan nama inventaris utama.
@@ -66,19 +65,18 @@ ATURAN UMUM:
 - Bedakan stok awal, reservasi, penjualan sesi, dan penjualan manual.
 - Jangan mencampurkan transaksi dari hari berbeda.
 - Jika data tidak jelas, minta konfirmasi.
-- Jangan membuat angka atau data yang tidak diberikan pengguna.
 - Gunakan bahasa Indonesia yang ringkas dan profesional.
 
 FORMAT JAWABAN:
 1. Gunakan Markdown terstruktur.
 2. Judul utama gunakan ##.
 3. Subjudul gunakan ###.
-4. Gunakan **bold** untuk informasi penting.
+4. Gunakan bold untuk informasi penting.
 5. Jika menampilkan beberapa produk, gunakan tabel:
    | Nama Produk | Jumlah |
    |---|---:|
    | French Fries | 10 pcs |
-6. Total stok harus ditampilkan jika datanya tersedia.
+6. Tampilkan total stok jika datanya tersedia.
 7. Jangan membuat tabel kosong.
 8. Jangan menggunakan terlalu banyak emoji.
 
@@ -101,12 +99,6 @@ Kamu adalah AI khusus stok, bukan asisten umum.
         });
       }
 
-      if (!contents.length) {
-        return res.status(400).json({
-          error: "Pesan gambar tidak ditemukan."
-        });
-      }
-
       contents[contents.length - 1].parts.push({
         inline_data: {
           mime_type: image.mimeType,
@@ -115,49 +107,33 @@ Kamu adalah AI khusus stok, bukan asisten umum.
       });
     }
 
-    // Menentukan alamat API Stock pada deployment Vercel.
-    const host =
-      process.env.VERCEL_URL ||
-      req.headers["x-forwarded-host"] ||
-      req.headers.host;
+    // Alamat API Stock AI
+    const stockApiBase = "https://new-stock-ai.vercel.app";
 
-    const protocol =
-      req.headers["x-forwarded-proto"]?.split(",")[0] || "https";
-
-    if (!host) {
-      return res.status(500).json({
-        error: "Alamat server Stock API tidak ditemukan."
-      });
-    }
-
-    const stockApiBase = process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : `${protocol}://${host}`;
-
-    // Fungsi yang dapat dipanggil Gemini.
+    // Fungsi yang tersedia untuk Gemini
     const tools = [
       {
         function_declarations: [
           {
             name: "get_stock",
             description:
-              "Membaca stok awal produk dari database Neon. Gunakan ketika pengguna bertanya tentang stok. Jika tanggal tidak diberikan, gunakan tanggal hari ini.",
+              "Membaca stok awal produk dari database Neon berdasarkan tanggal.",
             parameters: {
               type: "OBJECT",
               properties: {
                 date: {
                   type: "STRING",
-                  description:
-                    "Tanggal stok dalam format YYYY-MM-DD."
+                  description: "Tanggal format YYYY-MM-DD."
                 }
-              }
+              },
+              required: ["date"]
             }
           }
         ]
       }
     ];
 
-    // Memanggil Gemini.
+    // Fungsi pemanggilan Gemini
     async function callGemini(currentContents) {
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
@@ -198,10 +174,10 @@ Kamu adalah AI khusus stok, bukan asisten umum.
       return result;
     }
 
-    // Putaran pertama: Gemini membaca pesan pengguna.
+    // Permintaan pertama ke Gemini
     let result = await callGemini(contents);
 
-    // Maksimal tiga putaran pemanggilan fungsi.
+    // Maksimal tiga putaran Function Calling
     for (let round = 0; round < 3; round++) {
       const candidate = result.candidates?.[0];
       const parts = candidate?.content?.parts || [];
@@ -210,94 +186,87 @@ Kamu adalah AI khusus stok, bukan asisten umum.
         part => part.functionCall
       );
 
-      // Jika tidak ada permintaan fungsi, jawaban sudah selesai.
       if (functionCalls.length === 0) {
         break;
       }
 
-      // Simpan respons Gemini yang berisi permintaan fungsi.
       contents.push(candidate.content);
+
+      const functionResponses = [];
 
       for (const part of functionCalls) {
         const functionCall = part.functionCall;
 
         if (functionCall.name !== "get_stock") {
-          contents.push({
-            role: "user",
-            parts: [
-              {
-                functionResponse: {
-                  name: functionCall.name,
-                  response: {
-                    error: "Fungsi tidak tersedia."
-                  }
-                }
+          functionResponses.push({
+            functionResponse: {
+              name: functionCall.name,
+              response: {
+                error: "Fungsi tidak tersedia."
               }
-            ]
+            }
           });
-
           continue;
         }
 
-        const date = functionCall.args?.date;
+        const date = functionCall.args?.date || today;
 
-        if (
-          date &&
-          !/^\d{4}-\d{2}-\d{2}$/.test(date)
-        ) {
-          contents.push({
-            role: "user",
-            parts: [
-              {
-                functionResponse: {
-                  name: "get_stock",
-                  response: {
-                    error: "Format tanggal tidak valid."
-                  }
-                }
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+          functionResponses.push({
+            functionResponse: {
+              name: "get_stock",
+              response: {
+                error: "Format tanggal tidak valid."
               }
-            ]
+            }
           });
-
           continue;
         }
 
-        // Membaca data melalui API Stock yang sudah ada.
+        // Memanggil API Stock
         const stockUrl = new URL(
           "/api/stock",
           stockApiBase
         );
 
-        if (date) {
-          stockUrl.searchParams.set("date", date);
-        }
+        stockUrl.searchParams.set("date", date);
 
         const stockResponse = await fetch(stockUrl.toString());
-        const stockData = await stockResponse.json();
 
-        const functionResult = stockResponse.ok
-          ? stockData
-          : {
-              error:
-                stockData.error ||
-                "Gagal membaca data stok."
-            };
+        const responseText = await stockResponse.text();
 
-        // Mengirim hasil API kembali kepada Gemini.
-        contents.push({
-          role: "user",
-          parts: [
-            {
-              functionResponse: {
-                name: "get_stock",
-                response: functionResult
-              }
-            }
-          ]
+        let stockData;
+
+        try {
+          stockData = JSON.parse(responseText);
+        } catch {
+          throw new Error(
+            "Stock API mengembalikan HTML, bukan JSON."
+          );
+        }
+
+        if (!stockResponse.ok || !stockData.success) {
+          stockData = {
+            error:
+              stockData.error ||
+              "Gagal mengambil data stok."
+          };
+        }
+
+        functionResponses.push({
+          functionResponse: {
+            name: "get_stock",
+            response: stockData
+          }
         });
       }
 
-      // Gemini menyusun jawaban berdasarkan hasil API.
+      contents.push({
+        role: "user",
+        parts: functionResponses
+      });
+
+      // Mengirim data stok kembali kepada Gemini
       result = await callGemini(contents);
     }
 
@@ -321,7 +290,8 @@ Kamu adalah AI khusus stok, bukan asisten umum.
     console.error("Stock AI error:", error);
 
     return res.status(500).json({
-      error: error.message || "Terjadi kesalahan pada server."
+      error: error.message ||
+        "Terjadi kesalahan pada server."
     });
   }
 }
